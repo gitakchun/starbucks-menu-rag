@@ -1,0 +1,17 @@
+[project]
+name = "rag-capstone"
+version = "0.1.0"
+description = "스타벅스 메뉴·알레르기 Q&A RAG: Baseline vs Hybrid vs LLM Reranker 비교"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "langchain==1.4.2",
+  "langchain-openai==1.6.3",
+  "langchain-community==0.4.2",
+  "langchain-classic==1.0.8",
+  "langchain-text-splitters==1.1.2",
+  "langgraph==1.2.11",
+  "faiss-cpu==1.15.1",
+  "pypdf==6.19.0",
+  "python-dotenv==1.2.3",
+  "rank-bm25==0.2.2",
+]
