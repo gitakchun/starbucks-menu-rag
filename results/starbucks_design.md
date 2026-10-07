@@ -43,11 +43,11 @@ robots.txt가 허용하는 공식 페이지와 JSON 응답만 초당 4회 이하
 starbucks_knowledge.jsonl
   -> JSONL records -> LangChain Documents
   -> RecursiveCharacterTextSplitter (chunk_size=450, overlap=40)
-  -> text-embedding-3-small
+  -> gemini-embedding-001
   -> 738 records / 780 chunks -> FAISS
   -> Dense / Hybrid / Reranker Retriever (Top-3)
   -> 근거 한정 및 알레르기 안전 Prompt
-  -> gpt-4o-mini
+  -> gemini-3.5-flash-lite
 ```
 
-현재 검색 구조와 모델 비교는 기존 실습 코드를 재사용합니다. 수집기 실행에는 OpenAI API 키가 필요하지 않으며, 임베딩과 생성 평가는 기존 OpenAI API 키가 필요합니다.
+현재 검색 구조와 모델 비교는 기존 실습 코드를 재사용합니다. 수집기 실행에는 Google API 키가 필요하지 않으며, 임베딩과 생성 평가는 Google API 키가 필요합니다.

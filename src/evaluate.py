@@ -103,7 +103,7 @@ def judge(question: str, docs, answer_text: str) -> dict:
         context=format_docs(docs),
         question=question,
         answer=answer_text,
-    )).content
+    )).text
     match = re.search(r"\{.*\}", response, re.S)
     if not match:
         return {"grounded": 0, "answered": False}
@@ -184,14 +184,15 @@ def write_report(path: str, chunks, baseline: dict, improved: dict, conditions: 
             return "성공" if value else "실패"
         return format(value, fmt)
 
+    scored_count = sum(row["hit"] is not None for row in baseline["rows"])
     lines += [
         "## 요약", "",
         "| 지표 | " + " | ".join(r["name"] for r in columns) + " |",
         "|---" * (len(columns) + 1) + "|",
     ]
     for label, key, fmt in [
-        ("Retrieval Hit Rate (9문항)", "hit_rate", ".3f"),
-        ("Retrieval MRR (9문항)", "mrr", ".3f"),
+        (f"Retrieval Hit Rate ({scored_count}문항)", "hit_rate", ".3f"),
+        (f"Retrieval MRR ({scored_count}문항)", "mrr", ".3f"),
         ("Generation 근거성 평균 (1~5)", "grounded_avg", ".2f"),
         ("Generation 직접 답변 비율", "answered_rate", ".3f"),
         ("문서에 없는 질문 거절", "refusal_ok", ""),

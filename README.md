@@ -23,17 +23,19 @@
 
 ```text
 [PREPROCESSING]
-starbucks_knowledge.jsonl → JSONL Documents → RecursiveCharacterTextSplitter(450/40) → OpenAIEmbeddings → FAISS
+starbucks_knowledge.jsonl → JSONL Documents → RecursiveCharacterTextSplitter(450/40) → GoogleGenerativeAIEmbeddings → FAISS
 
 [RUNTIME]
-Question → Dense Retriever (후보 6개) → LLM Reranker (관련도 0~100) → Top-3
-                                                                       ↓
-                                                    Context → Prompt → gpt-4o-mini → Answer
+Question → Retriever (아래 세 방식 비교) → Top-3 → Context → Prompt → gemini-3.5-flash-lite → Answer
 ```
 
+같은 질문셋으로 세 가지 검색 방식을 비교합니다.
+
 - Baseline: Dense Similarity Retriever (k=3)
-- 시도했지만 채택하지 않은 방식: Dense + BM25 Hybrid
-- 최종 개선: 위 구조의 Dense + Reranker
+- Hybrid: Dense + BM25 (RRF, 가중치 0.5/0.5) → Top-3
+- Reranker: Dense 후보 6개 → LLM 관련도(0~100) Rerank → Top-3
+
+이 데이터셋의 첫 측정에서는 Baseline이 가장 높았고, Hybrid와 Reranker는 Baseline을 넘지 못했습니다 (7장). 최종 채택 방식은 검증셋을 늘린 뒤 정합니다.
 
 ```text
 starbucks-menu-rag/
@@ -53,7 +55,7 @@ starbucks-menu-rag/
 │   ├── retrieve.py           # Baseline / Hybrid(시도) / Reranker(최종)
 │   ├── rag.py                # Prompt → Chat Model, 근거 없음 처리
 │   ├── evaluate.py           # 고정 질문셋, Retrieval·Generation 평가, 결과 기록
-│   └── capstone_compare.py   # 실행 진입점 (교재 TODO 1~7 순서)
+│   └── capstone_compare.py   # 실행 진입점
 └── results/
     ├── starbucks_design.md       # 현재 도메인 설계와 공식 출처
     ├── starbucks_evaluation.md   # 현재 질문셋과 안전성 판정 기준
@@ -62,7 +64,7 @@ starbucks-menu-rag/
 
 ## 4. 설치 방법
 
-공통 사전 준비: Python 3.11, [uv](https://docs.astral.sh/uv/). 데이터 수집과 오프라인 검색에는 OpenAI API Key가 필요하지 않습니다.
+공통 사전 준비: Python 3.11, [uv](https://docs.astral.sh/uv/). 데이터 수집과 오프라인 검색에는 Google API Key가 필요하지 않습니다.
 
 macOS / Linux:
 
@@ -70,7 +72,7 @@ macOS / Linux:
 git clone https://github.com/gitakchun/starbucks-menu-rag.git
 cd starbucks-menu-rag
 uv sync
-# 전체 API 평가에만 필요: cp .env.example .env 후 OPENAI_API_KEY 입력
+# 전체 API 평가에만 필요: cp .env.example .env 후 GOOGLE_API_KEY 입력
 ```
 
 Windows PowerShell:
@@ -79,7 +81,7 @@ Windows PowerShell:
 git clone https://github.com/gitakchun/starbucks-menu-rag.git
 cd starbucks-menu-rag
 uv sync
-# 전체 API 평가에만 필요: Copy-Item .env.example .env 후 OPENAI_API_KEY 입력
+# 전체 API 평가에만 필요: Copy-Item .env.example .env 후 GOOGLE_API_KEY 입력
 ```
 
 
@@ -97,7 +99,7 @@ uv run python src/collect_starbucks_data.py --delay 0.25
 uv run python src/collect_starbucks_data.py --limit 2 --skip-faq --delay 0 --output /tmp/starbucks-smoke.jsonl
 ```
 
-전체 RAG 임베딩·생성 평가에는 `.env`의 `OPENAI_API_KEY`가 필요합니다.
+전체 RAG 임베딩·생성 평가에는 `.env`의 `GOOGLE_API_KEY`가 필요합니다.
 
 ```bash
 uv run python src/capstone_compare.py
@@ -117,7 +119,7 @@ uv run python src/offline_demo.py --question "우유 알레르기인데 카페 �
 4. 지표 비교와 최종 답변 예시 출력
 5. `results/run_result.md` 갱신
 
-`gpt-4o-mini` 호출은 실행 1회에 약 102번입니다 (Rerank 60회, 답변·Judge 40회, 예시 답변 2회). Embedding 호출은 별도입니다.
+`gemini-3.5-flash-lite` 호출은 실행 1회에 약 102번입니다 (Rerank 60회, 답변·Judge 40회, 예시 답변 2회). 무료 등급 한도에 맞춰 Chat은 분당 10건, Embedding은 61초마다 90건씩 보내므로 첫 실행은 20분쯤 걸립니다. Embedding 결과는 `.cache/`에 저장되어 재실행 때 다시 호출하지 않습니다.
 
 ## 6. 평가 질문
 
@@ -131,7 +133,25 @@ uv run python src/offline_demo.py --question "우유 알레르기인데 카페 �
 
 ## 7. 현재 결과
 
-이 데이터셋에 대한 비교 평가 결과는 아직 측정 전입니다. 실행 후 `results/run_result.md`가 생성됩니다.
+2026-10-07 측정 결과입니다. 조건: `gemini-embedding-001`, `gemini-3.5-flash-lite`(답변·Rerank·Judge 공통, temperature=0), Top-3, 답변 가능 질문 7개(Q1~Q7). 질문별 상세는 `results/run_result.md`에 있습니다.
+
+| 지표 | Baseline Dense | Hybrid | Reranker |
+|---|---|---|---|
+| Retrieval Hit Rate (7문항) | 1.000 | 1.000 | 0.857 |
+| Retrieval MRR (7문항) | 0.833 | 0.810 | 0.786 |
+| Generation 근거성 평균 (1~5) | 5.00 | - | 5.00 |
+| Generation 직접 답변 비율 | 0.714 | - | 0.571 |
+
+- **Baseline이 이미 7문항을 모두 맞혔습니다.** 개선안이 더 나아질 여지가 없는 질문셋이라, 방식 간 우열을 가리기에는 부족합니다.
+- **Hybrid는 Baseline과 Hit Rate가 같고 MRR만 낮습니다.** 차이는 Q7 하나에서 났습니다. BM25가 "별 적립"이 겹치는 다른 카드 FAQ를 2위로 올려, 정답 근거가 3위로 밀렸습니다.
+- **Reranker는 Q2를 놓쳤습니다.** 카페 아메리카노 Chunk를 후보에서 떨어뜨리고 아이스 카페 라떼를 올려, 카페인 비교에 필요한 150mg 근거가 Top-3에서 빠졌습니다.
+- **Q8·Q9 답변은 안전 원칙을 지켰습니다.** 두 방식 모두 "표시 없음은 무알레르기나 안전을 뜻하지 않는다"고 답했고, 안전을 보증하지 않았습니다.
+
+해석할 때 주의할 점:
+
+- **거절·직접 답변 지표는 그대로 믿기 어렵습니다.** 거절 여부를 "확인할 수 없" 문구 포함으로만 판정합니다. 그래서 Q8·Q9처럼 다른 표현으로 올바르게 보류한 답변은 거절 실패로 집계되고, Q3·Q5처럼 답을 한 뒤 "그 외는 확인할 수 없다"고 덧붙인 답변은 답하지 않은 것으로 집계됩니다. `run_result.md`의 "문서에 없는 질문 거절: 실패"는 이 판정 방식 때문입니다.
+- **Reranker 결과는 lite 모델 기준입니다.** 무료 등급 한도 때문에 `gemini-3.5-flash-lite`로 측정했습니다. 더 큰 모델로 Rerank하면 결과가 달라질 수 있습니다.
+- **1회 측정입니다.** 반복 실행에 따른 편차는 확인하지 않았습니다.
 
 ## 8. 한계와 추가 개선 방향
 

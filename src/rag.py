@@ -2,12 +2,15 @@
 
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
+from langchain_core.rate_limiters import InMemoryRateLimiter
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 # 모듈 import 시점에 Chat Model을 만들므로 여기서 .env를 먼저 읽습니다.
 load_dotenv()
 
-CHAT_MODEL = "gpt-4o-mini"
+CHAT_MODEL = "gemini-3.5-flash-lite"
+# Gemini 무료 등급의 분당 요청 한도를 넘지 않도록 호출 간격을 둡니다.
+REQUESTS_PER_MINUTE = 10
 NO_ANSWER = "제공된 문서에서 확인할 수 없습니다."
 
 prompt = ChatPromptTemplate.from_template("""
@@ -28,7 +31,11 @@ prompt = ChatPromptTemplate.from_template("""
 {question}
 """)
 
-llm = ChatOpenAI(model=CHAT_MODEL, temperature=0)
+llm = ChatGoogleGenerativeAI(
+    model=CHAT_MODEL,
+    temperature=0,
+    rate_limiter=InMemoryRateLimiter(requests_per_second=REQUESTS_PER_MINUTE / 60, max_bucket_size=1),
+)
 
 
 def format_docs(docs) -> str:
@@ -46,7 +53,7 @@ def answer(question: str, docs) -> str:
         "context": format_docs(docs),
         "question": question,
     })
-    return llm.invoke(messages).content.strip()
+    return llm.invoke(messages).text.strip()
 
 
 def answer_with_retriever(question: str, retriever) -> str:

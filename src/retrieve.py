@@ -78,7 +78,7 @@ def relevance_scores(question: str, docs) -> list[int]:
     ])
     scores = []
     for response in responses:
-        match = re.search(r"\d+", response.content)
+        match = re.search(r"\d+", response.text)
         scores.append(min(100, max(0, int(match.group()))) if match else 0)
     return scores
 

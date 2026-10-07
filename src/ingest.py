@@ -1,17 +1,24 @@
 """PREPROCESSING: 문서 로드 → Chunk 분할 → Embedding → Vector Store."""
 
 from pathlib import Path
+import hashlib
 import json
+import pickle
+import time
 
 from langchain_community.document_loaders import TextLoader
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
-from langchain_openai import OpenAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-EMBEDDING_MODEL = "text-embedding-3-small"
+EMBEDDING_MODEL = "gemini-embedding-001"
 CHUNK_SIZE = 450
 CHUNK_OVERLAP = 40
+# Gemini 무료 등급은 Embedding 요청이 분당 100건으로 제한됩니다.
+EMBED_BATCH_SIZE = 90
+EMBED_BATCH_INTERVAL = 61
+EMBED_CACHE_PATH = Path(".cache") / f"embeddings_{EMBEDDING_MODEL}.pkl"
 
 
 def load_documents(file_path: str):
@@ -66,7 +73,9 @@ def load_documents(file_path: str):
                         "source": record.get("source_url", ""),
                         "record_type": record["record_type"],
                         "item_id": str(item_id),
+                        "name": record.get("name", ""),
                         "category": record.get("category", ""),
+                        "allergens": record.get("allergens") or "",
                         "collected_at": record.get("collected_at", ""),
                         "allergen_status": record.get("allergen_status", ""),
                         "question": record.get("question", ""),
@@ -84,7 +93,14 @@ def split_documents(docs):
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
     )
-    chunks = splitter.split_documents(docs)
+    # 메뉴 레코드는 쪼개지 않습니다. 메뉴명과 알레르기 표시가 다른 Chunk로
+    # 갈라지면 다른 메뉴의 알레르기 정보로 답할 수 있기 때문입니다.
+    chunks = []
+    for doc in docs:
+        if doc.metadata.get("record_type") == "menu":
+            chunks.append(doc)
+        else:
+            chunks.extend(splitter.split_documents([doc]))
 
     # 검색 결과를 비교할 때 어떤 Chunk가 나왔는지 번호로 추적합니다.
     for i, chunk in enumerate(chunks, start=1):
@@ -100,8 +116,33 @@ def split_documents(docs):
     return chunks
 
 
+def embed_with_cache(texts: list[str], embeddings) -> list[list[float]]:
+    """분당 한도에 맞춰 나눠 Embedding하고, 결과를 디스크에 저장해 재실행 때 재사용합니다."""
+
+    cache = pickle.loads(EMBED_CACHE_PATH.read_bytes()) if EMBED_CACHE_PATH.exists() else {}
+    keys = [hashlib.sha256(text.encode("utf-8")).hexdigest() for text in texts]
+    missing = list({key: text for key, text in zip(keys, texts) if key not in cache}.items())
+
+    for start in range(0, len(missing), EMBED_BATCH_SIZE):
+        if start:
+            time.sleep(EMBED_BATCH_INTERVAL)
+        batch = missing[start:start + EMBED_BATCH_SIZE]
+        vectors = embeddings.embed_documents([text for _, text in batch])
+        cache.update((key, vector) for (key, _), vector in zip(batch, vectors))
+        EMBED_CACHE_PATH.parent.mkdir(exist_ok=True)
+        EMBED_CACHE_PATH.write_bytes(pickle.dumps(cache))
+        print(f"Embedding {min(start + EMBED_BATCH_SIZE, len(missing))}/{len(missing)}")
+
+    return [cache[key] for key in keys]
+
+
 def build_vectorstore(chunks):
     """Chunk를 Embedding하여 FAISS Vector Store를 만듭니다."""
 
-    embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
-    return FAISS.from_documents(chunks, embeddings)
+    embeddings = GoogleGenerativeAIEmbeddings(model=EMBEDDING_MODEL)
+    texts = [chunk.page_content for chunk in chunks]
+    return FAISS.from_embeddings(
+        list(zip(texts, embed_with_cache(texts, embeddings))),
+        embeddings,
+        metadatas=[chunk.metadata for chunk in chunks],
+    )

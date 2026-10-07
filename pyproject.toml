@@ -5,7 +5,6 @@ description = "스타벅스 메뉴·알레르기 Q&A RAG: Baseline vs Hybrid vs 
 requires-python = ">=3.11,<3.12"
 dependencies = [
   "langchain==1.4.2",
-  "langchain-openai==1.6.3",
   "langchain-community==0.4.2",
   "langchain-classic==1.0.8",
   "langchain-text-splitters==1.1.2",
@@ -14,4 +13,5 @@ dependencies = [
   "pypdf==6.19.0",
   "python-dotenv==1.2.3",
   "rank-bm25==0.2.2",
+  "langchain-google-genai==4.4.0",
 ]
